@@ -1,0 +1,2116 @@
+{
+  "name": "Grok Rocket Chat Beta",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "options": {
+          "systemMessage": "Role: Intake Triage for COACH. Your job is to remove ambiguity before any solving happens.\n\nGoal: To have a brief conversation with the user to resolve ambiguity if needed, and then produce a final JSON package for the Coach agent.\n\nCore Workflow:\n\nStep 1: Analyze Input. When you receive a user's task, analyze it for ambiguity (language, I/O style, constraints, edge cases).\n\nStep 2: Decide & Act.\n\nIf (Sufficient): The task is clear (e.g., standard pattern like two-sum, 'use your assumptions' is present, or all details are provided).\n\nAction: Do not ask any questions. Your one and only response must be the final JSON package with \"needs_questions\": false and a full assumptions array.\n\nIf (Ambiguous): The task is missing key information.\n\nAction: Do not output JSON. Instead, ask the user up to 3 high-leverage, plain-text questions to unblock you.\n\nStep 3: Clarification Loop.\n\nContinue the brief, conversational Q&A until all ambiguities are resolved.\n\nStep 4: Final Handoff.\n\nOnce you have all the answers you need, your very next and final response must be the complete JSON package.\n\nThis final JSON package must have \"needs_questions\": false and include all the details you gathered in the assumptions array.\n\nCritical Rules & Constraints\nTwo Output Modes (Never Mix): You either respond with conversational questions (plain text) or you respond with the final JSON package. You never do both in the same turn.\n\nJSON is for the Coach: The JSON output is your \"handoff\" to the next agent. You only produce it once, as your very last message, after all clarification is complete.\n\nDo Not Solve: Absolutely do not solve, hint, rewrite, or critique code. Your job is only to clarify the task.\n\nHeuristics (Ask vs. Assume):\n\nAsk only if the answer would change the algorithm, API, or output format.\n\nOtherwise, assume sensible defaults (Python 3.11, standard library, return vs. print implied by code) and list them in your final assumptions.\n\nFinal Output — JSON only (for Handoff)\n(This section is unchanged, as this is the package you build for the Coach)\n\nJSON\n\n{\n  \"needs_questions\": false,\n  \"questions\": [],\n  \"assumptions\": [\n    \"Language: Python 3.11; standard library only.\",\n    \"The function 'solve' must return the result, not print it.\",\n    \"Input list 'nums' can be empty, in which case return [].\"\n  ],\n  \"notes_for_coach\": {\n    \"task_summary\": \"Implement the 'solve' function per the user's problem.\",\n    \"signals\": {\n      \"signature\": \"def solve(nums: list[int]) -> list[int]\",\n      \"io_style\": \"return\",\n      \"constraints\": [\"O(n) target\"],\n      \"edge_cases\": [\"empty list\"]\n    }\n  }\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1696,
+        2304
+      ],
+      "id": "b8ccccbb-a4f6-47d2-a259-40448daf142b",
+      "name": "Clarifier"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the output from the database reader node\nconst dbResult = $items('db_read_full_CLARIFIER')[0].json;\n\n// Use the correct field 'prior_dialog' for the history\nconst prior = dbResult.prior_dialog || '';\n\n// Use the correct field 'latest_user' for the current prompt\nconst latest = dbResult.latest_user;\n\n// Only add the separator if there is prior history\nconst sep = prior ? '\\\\n---\\\\n' : '';\n\n// Compose the final prompt for the Coach\nconst prompt = `${prior}${sep}User: ${latest}`;\n\nreturn [{ prompt }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        2384
+      ],
+      "id": "f69dfcac-a7b5-4843-9604-5a595c926af8",
+      "name": "Build_Clarifier_Input"
+    },
+    {
+      "parameters": {
+        "model": "grok-4-fast-reasoning",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatXAiGrok",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        2528
+      ],
+      "id": "6ea589e7-973a-4304-b90c-e3428521a120",
+      "name": "Clarifier_Grok-4-Fast",
+      "credentials": {
+        "xAiApi": {
+          "id": "mNKinnPhqnLvl27U",
+          "name": "xAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.prompt }}",
+                    "rightValue": "dialogue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "485db486-3172-42e3-a416-72b7a180c424"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DIALECTICIAN"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1b2d9f96-f994-4b58-8ddc-51b51a0e6e8a",
+                    "leftValue": "={{ $json.prompt }}",
+                    "rightValue": "dialogue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notStartsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CLARIFIER"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1472,
+        2016
+      ],
+      "id": "af73b882-bee4-4a02-ad67-26e5cb116bec",
+      "name": "1st_turn_switch"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.conversations (rc_room_id, rc_user_id)\nVALUES ($1, $2)\nON CONFLICT (rc_room_id) DO UPDATE\n  SET updated_at = NOW()\nRETURNING conversation_id, target_agent;",
+        "options": {
+          "queryReplacement": "={{ [\n  $node[\"Edit Fields\"].json.rcRoomId, \n  $node[\"Edit Fields\"].json.rcUserId\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        352,
+        1776
+      ],
+      "id": "4cd94ae6-8c6f-45a3-91d3-d279823fff4c",
+      "name": "db_upsert_conversation",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH convo AS (\n  SELECT conversation_id\n  FROM public.conversations\n  WHERE conversation_id = $1\n  FOR UPDATE\n),\nnext_seq AS (\n  SELECT COALESCE(MAX(sequence_no), 0) + 1 AS n\n  FROM public.messages\n  WHERE conversation_id = (SELECT conversation_id FROM convo)\n)\nINSERT INTO public.messages (conversation_id, sequence_no, role, content, rc_message_id)\nSELECT (SELECT conversation_id FROM convo),\n       (SELECT n FROM next_seq),\n       $2::public.message_role,\n       $3,\n       $4\nRETURNING message_id, conversation_id, sequence_no, role, content;",
+        "options": {
+          "queryReplacement": "={{ [\n  $node[\"db_upsert_conversation\"].json.conversation_id,\n  'user',\n  $node[\"Edit Fields\"].json.rcMessage,\n  $node[\"Edit Fields\"].json.rcMessageId \n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        576,
+        1776
+      ],
+      "id": "b376e8f9-b9c7-49fc-89e8-4606f327f828",
+      "name": "db_insert_message",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0b330704-4a75-426a-8e0e-70d89aa104c3",
+              "name": "conversation_id",
+              "value": "={{ $node[\"db_upsert_conversation\"].json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "5c9e6558-a062-4709-b7ef-467d50e13f11",
+              "name": "prompt",
+              "value": "={{ $('Edit Fields').item.json.rcMessage }}",
+              "type": "string"
+            },
+            {
+              "id": "df583c90-a2eb-415a-91bd-80c79c93ee01",
+              "name": "target",
+              "value": "={{ $('db_upsert_conversation').item.json.target_agent }}",
+              "type": "string"
+            },
+            {
+              "id": "8ddd34b4-e5fc-4ff2-82b5-39a6f5fc1f7a",
+              "name": "user_profile",
+              "value": "User Profile Primary Goal To become a professional Software Engineer, with a focus on building robust systems and leveraging AI/LLMs.  Current Learning Context The user is actively building foundational knowledge across several core areas of computer science. Current coursework includes:  Harvard's CS50 (via edX): Broad introduction to computer science fundamentals.  Boot.dev: Practical, hands-on Python curriculum. The user has completed all courses up to and including \"Build an Agent with Python.\"  UC San Diego's Discrete Mathematics for Computer Science (via Coursera): Formal mathematical foundations.  Learning Preferences & Heuristics Pragmatic Approach: The user prefers to establish a correct, working solution first, and then iterate to refine it towards the most optimal or \"best practice\" solution. The learning process is \"get it working, then get it right.\"  Multi-Angle Learning: The user finds it highly effective to see the same concept explained or applied from multiple different angles to build a more robust mental model.  Systems Thinker: The user has a demonstrated interest and aptitude for understanding and building complex, interconnected systems (as evidenced by the creation of this n8n workflow). They are interested in how individual components fit into a larger architecture.  Emerging Interests: While the user's primary focus is on building a strong foundation, they have a stated interest in AI/LLMs. They are currently in an exploratory phase and are open to discovering new areas of interest through practical application.",
+              "type": "string"
+            },
+            {
+              "id": "05a88114-18ec-4e77-a34d-0a96a05f7f58",
+              "name": "rcRoomId",
+              "value": "={{ $('Edit Fields').item.json.rcRoomId }}",
+              "type": "string"
+            },
+            {
+              "id": "785b9446-cf9d-4306-babf-348090c83fcc",
+              "name": "rcMessageId",
+              "value": "={{ $('Edit Fields').item.json.rcMessageId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        800,
+        1776
+      ],
+      "id": "f0dbf3ef-3a00-483f-af70-d6dd4f6fffc8",
+      "name": "set_conversation_context"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.conversations\nSET target_agent = 'CLARIFIER',\n    updated_at   = NOW()\nWHERE conversation_id = $1::uuid;",
+        "options": {
+          "queryReplacement": "={{$json.conversation_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        2016
+      ],
+      "id": "f4f864fb-7292-4326-9216-49201a24602e",
+      "name": "update_target_agent_CLARIFIER",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH next_seq AS (\n  SELECT COALESCE(MAX(sequence_no), 0) + 1 AS n\n  FROM public.messages\n  WHERE conversation_id = $1::uuid\n)\nINSERT INTO public.messages (conversation_id, sequence_no, role, content)\nSELECT $1::uuid, (SELECT n FROM next_seq), $2::public.message_role, $3;",
+        "options": {
+          "queryReplacement": "={{ [ $('set_conversation_context').item.json.conversation_id, 'clarifier', $json.output ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2272,
+        2496
+      ],
+      "id": "6bef1bc3-ae13-4e8d-b34a-e3ccc7a17299",
+      "name": "memory_update_CLARIFIER",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.target }}",
+                    "rightValue": "coach",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "3ad7b065-ad68-4252-9d4a-ef82ff6627ee"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "COACH"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "95d9d1c8-9d05-41dd-ad1c-102375435f2a",
+                    "leftValue": "={{ $json.target }}",
+                    "rightValue": "dialectician",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DIALECTICIAN"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9fe42c87-2b72-41f2-8c0d-d12682ee9fc1",
+                    "leftValue": "={{ $json.target }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Router Agent"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "115382de-df29-442f-b932-41663f51b34d",
+                    "leftValue": "={{ $json.target }}",
+                    "rightValue": "CLARIFIER",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CLARIFIER"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d4effefc-9694-418d-9ccb-641a8b03ccb6",
+                    "leftValue": "={{ $json.target }}",
+                    "rightValue": "integrator",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INTEGRATOR"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1024,
+        1728
+      ],
+      "id": "9790322b-30df-404b-94d3-2967106695e8",
+      "name": "cache_switch"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "BEGIN;\n\nTRUNCATE TABLE public.tool_calls,\n               public.messages,\n               public.conversations\nRESTART IDENTITY CASCADE;\n\nCOMMIT;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -304,
+        672
+      ],
+      "id": "206febbe-5e0b-4a48-9c65-d90ed4ebad40",
+      "name": "Truncate_tables",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH msgs AS (\n  SELECT\n    role::text AS role_text,\n    content,\n    sequence_no\n  FROM public.messages\n  WHERE\n    conversation_id = $1::uuid\n    AND role::text IN ('user', 'clarifier')\n),\nlatest_user AS (\n  SELECT MAX(sequence_no) AS seq\n  FROM msgs\n  WHERE role_text = 'user'\n)\nSELECT\n  (\n    SELECT STRING_AGG(INITCAP(role_text) || ': ' || content, E'\\\\n---\\\\n' ORDER BY sequence_no)\n    FROM msgs\n    WHERE sequence_no < (SELECT seq FROM latest_user)\n  ) AS prior_dialog,\n  (\n    SELECT content\n    FROM msgs\n    WHERE sequence_no = (SELECT seq FROM latest_user)\n  ) AS latest_user;",
+        "options": {
+          "queryReplacement": "={{ $('set_conversation_context').item.json.conversation_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        2384
+      ],
+      "id": "8f34e6ef-27fe-43f1-aa03-ca72a8122b1a",
+      "name": "db_read_full_CLARIFIER",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "HYgCNu4KNigQBwzk",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/HYgCNu4KNigQBwzk",
+          "cachedResultName": "coach_pioneer_swf_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $('set_conversation_context').item.json.conversation_id }}",
+            "clarifier_output": "={{ $json.output }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "clarifier_output",
+              "displayName": "clarifier_output",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2272,
+        2240
+      ],
+      "id": "414691fb-3915-4b74-9577-edd6d5a2f479",
+      "name": "Call 'coach_pioneer_swf'"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2496,
+        1312
+      ],
+      "id": "f2882eae-af9e-42df-9329-e62851cb84cd",
+      "name": "COACH Merge"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3616,
+        1216
+      ],
+      "id": "d3e78ff7-ecf9-4822-b387-86b638a871ec",
+      "name": "INTEGRATOR Merge"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "u3PANbUnAaMmwThX",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/u3PANbUnAaMmwThX",
+          "cachedResultName": "prompt_with_history"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "agent_name": "integrator",
+            "conversation_id": "={{ $json.conversation_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3392,
+        1632
+      ],
+      "id": "47d5fcce-514b-4c71-b8bf-43ea4077ebf1",
+      "name": "Call 'prompt_with_history'INTEGRATOR"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "u3PANbUnAaMmwThX",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/u3PANbUnAaMmwThX",
+          "cachedResultName": "prompt_with_history_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $json.conversation_id }}",
+            "agent_name": "coach"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2272,
+        1312
+      ],
+      "id": "0a08c426-26c0-4dca-bab9-7f34de0f4177",
+      "name": "Call 'prompt_with_history'COACH"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3abf8b99-a207-416c-b46f-5ae33c85724c",
+              "leftValue": "={{ $json.output }}\n",
+              "rightValue": "\"needs_questions\": false",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2048,
+        2304
+      ],
+      "id": "8a2d7c9c-c38c-4734-8399-f08a8447ca8e",
+      "name": "If_CLARIFIER_finished"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "ENRICHMENT_COMPLETE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "417bdf4f-8f42-43ec-a587-05a047277075"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "COMPLETE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f93556c-a95c-4be7-a362-b5724a97d22b",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "ENRICHMENT_COMPLETE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Conversation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        4064,
+        1232
+      ],
+      "id": "04481c3f-8ba5-4af2-823d-b7e7a7a7fe86",
+      "name": "INTEGRATOR_handoff"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT STRING_AGG(INITCAP(role::text) || ': ' || content, E'\\n---\\n' ORDER BY sequence_no) AS full_transcript\nFROM public.messages\nWHERE conversation_id = $1::uuid\nAND role::text IN ('user', 'coach', 'integrator', 'dialectician');",
+        "options": {
+          "queryReplacement": "={{ $('cache_switch').item.json.conversation_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4288,
+        1200
+      ],
+      "id": "ac6335e5-4c66-4485-862e-ad23bd516719",
+      "name": "db_read_full_transcript",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "NAhZpiuAWRr5cKmK",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NAhZpiuAWRr5cKmK",
+          "cachedResultName": "note_agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "prompt": "={{ $json.full_transcript }}",
+            "system_message": "# Persona: The Archivist  ROLE: A meticulous writer who creates objective, encyclopedia-style reference notes on core technical concepts. TASK: To identify personalized concepts from an enriched transcript and then synthesize a comprehensive, technically impeccable note for each one, using its full knowledge base. GOAL: To create a set of permanent, technically accurate reference notes on the _specific concepts the user engaged with_ during their session, ensuring the final note is a complete and authoritative resource on that topic.  # Input  - The full, combined transcript from the `Coach` and `Integrator` sessions.       # Critical Rules & Heuristics  - **Personalized Topics, Authoritative Content:** The _topics_ for your notes must be directly derived from the user's learning journey in the transcript (e.g., their struggles, breakthroughs, or the primary focus of the session). The _content_ of the notes, however, must be a comprehensive and factually correct encyclopedia-style entry, using your full knowledge to fill in any gaps not covered in the conversation.      - **Use the Transcript for Curation and Context:** The transcript is your guide to **what to write about** and for adding relevant, contextual examples (like specific code snippets or analogies from the session) that make the final note more memorable. It is **not** a limit on the scope of the content.      - **Maintain an Objective, Encyclopedia-Style Tone:** The final note must be impersonal, formal, and structured for deep reference.       # Process  1. **Identify Personalized Concepts:** Begin by scanning the entire transcript to identify the 1-3 primary technical concepts that were the focus of the session. The `Integrator`'s interview is the best source for identifying the concepts the user found most challenging or important.      2. **Synthesize the Comprehensive Note:** For each concept you identify, use your full knowledge base to write a complete and authoritative technical note. Weave in contextual examples from the transcript where they add value, and adhere strictly to the structure defined in the output contract below.       # Final Output Contract  Your final output must be a single, well-formed JSON array that can contain one or more note objects.  - **Format:** JSON Array      - **Critical Logic:** For each note you generate, you must first infer a short, descriptive title from its content. You will then use this title to generate the `fileName`.      - **Schema:**          ```     [       {         \"fileName\": \"<inferred_title_in_kebab-case>.md\",         \"fileContent\": \"# [The Full, Human-Readable Inferred Title]\\n\\n**Date:** <today>\\n\\n## Summary\\n\\nA concise, bullet-point summary of the concept, including its primary objective and core mechanics.\\n\\n## Deep Dive\\n\\nA detailed, prose-based explanation of the concept's mechanism, logic, and any important nuances or variations.\\n\\n## Red Team Analysis\\n\\nA section that presents common counterarguments, limitations, or alternative approaches to the concept.\\n\\n## Transfer Test\\n\\nA forward-looking section that explores how the core principle of the concept can be applied in different contexts, including other programming languages or problem domains.\\n\\n## Integration & Expansion\\n\\nA section that discusses how this concept connects to other, adjacent technical concepts, exploring synergies and relationships.\"       }     ]     ```      - **Instructions:**          - The top-level output **must** be a JSON array `[]`.              - Each object in the array represents a single, complete note.              - The `fileName` **must** be generated by taking the inferred title, converting it to lowercase, and replacing all spaces and special characters with a single hyphen (`-`).              - The `fileContent` value must be a single string containing the complete, formatted Markdown note.",
+            "output_path": "StudyNotes/Reference",
+            "temperature": 0.05
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "output_path",
+              "displayName": "output_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4512,
+        1280
+      ],
+      "id": "8e078e29-0b63-4241-aa68-a03f616a489d",
+      "name": "Call ARCHIVIST"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "7lZWjDzpfhGqnvCi",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/7lZWjDzpfhGqnvCi",
+          "cachedResultName": "agent_executor_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "temperature": 0.6,
+            "prompt": "={{ $json.prompt }}",
+            "conversation_id": "={{ $('cache_switch').item.json.conversation_id }}",
+            "agent_name": "integrator",
+            "system_message": "# Persona: The Session Integrator\n\nROLE: A meticulous and empathetic post-session interviewer.\nTASK: To conduct a guided, reflective conversation that enriches the original transcript with explicit details about the user's learning process, rationale, and conceptual understanding.\nGOAL: To have a conversation that will be saved to a database, and then signal its completion with a unique phrase.\n\n# Input\n\n- The full transcript of the preceding `Coach`, or `Dialectician` session.\n\n# Core Philosophy\n\n- **Goal-Oriented Dialogue**: Your primary directive is to ensure the conversation enriches the transcript to meet the needs of the downstream note-makers. You have the autonomy to generate any questions necessary to achieve the goals outlined below.\n- **Be an Interviewer, Not a Creator**: Your only job is to ask great questions that cause the user to articulate the missing context.\n\n# Workflow\n\n- ACTION: INTAKE_AND_ANALYZE_COACH_TRANSCRIPT\n  - STEP 1: Ingest the full transcript from the session.\n  - STEP 2: Silently analyze the transcript to identify gaps where the user's reasoning, process, or conceptual understanding is implicit rather than explicit. This analysis informs your line of questioning.\n\n- ACTION: CONDUCT_ENRICHMENT_INTERVIEW\n  - STEP 1: ANNOUNCE_INTENT\n    - PROMPT: \"To help create the best possible notes and make sure the lesson sticks, I'd like to walk through the session with you.\"\n  - STEP 2: ACHIEVE_ELICITATION_GOALS\n    - LOGIC: Dynamically generate a conversation that results in a transcript where the user has explicitly articulated the following points.\n    - **Goal 1: A Rich Procedure (for the Playbook)**\n      - The transcript must contain a clear, step-by-step narration of the solution's development, including the **rationale** for each major decision.\n    - **Goal 2: A Clear Learning Arc (for the Debrief)**\n      - The transcript must contain a clear articulation of the **primary struggle**, the **breakthrough insight**, and any **off-record work** (e.g., external lookups).\n    - **Goal 3: A Solidified Concept (for the Archivist/Flashcards)**\n      - The transcript must contain a clear, user-generated **explanation of the core concepts** in their own words.\n\n- ACTION: CONCLUDE_INTERVIEW\n  - DESCRIPTION: Once all elicitation goals have been met, conclude the conversation by outputting the final trigger phrase.\n  - CONSTRAINT: The agent's final output **must be** the following verbatim phrase and nothing else.\n  - FINAL_OUTPUT: `//ENRICHMENT_COMPLETE//`"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3840,
+        1232
+      ],
+      "id": "a312aaf5-64a3-44e7-9f89-be18a174476e",
+      "name": "Call 'agent_executor'INTEGRATOR"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "NAhZpiuAWRr5cKmK",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NAhZpiuAWRr5cKmK",
+          "cachedResultName": "note_agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "system_message": "# Session Debrief — Agent Spec (v2)  ## North Star  Capture the **change in understanding** from this session so **the learner** can re-enter quickly, remember the right things, and apply them with light pressure—without rewatching or rereading.  ## What to produce (one Markdown note, human voice)  Write a compact debrief **from a tutor's perspective (second-person, 'you')** that shows how **the learner's** mental model shifted. Prefer examples over abstractions. Use short, concrete snippets (code/math/CLI) when they clarify the rule.  _Self-Correction: If no mental model shifted, this debrief should instead capture the primary takeaways, outcomes, or snags for the learner._  ### Required sections (names fixed; content flexible)  1. **Opening** _(2–4 lines)_ What **the learner** tried today and why it mattered.      2. **Key Takeaways** _(1-3 points or short paragraph)_ What was the main result or observation? This section captures the primary outcome for **the learner**, even if no \"mental model shift\" occurred (e.g., \"Confirmed setup works,\" \"Hit a blocking bug,\" \"Implemented feature X\").      3. **Learning Shifts** _(Optional: 2–4 moments)_ _Include this section **only if** a clear \"Before/After\" mental model shift occurred._ For each moment, show:          - **Before (flawed):** what **the learner** believed / did that failed.              - **After (rule/invariant):** what **the new rule/understanding** is.              - **Why it works now:** one or two sentences.              - _(Optional but encouraged)_ a tiny snippet (≤5 lines) that captures the change.          4. **Snags → Fixes** _(bullets)_ The sharp edges **the learner** hit and the one-line rule/snippet that prevents a repeat.      5. **Exit Quiz** _(integrated for tomorrow’s review)_ A **3–5 question** micro-quiz designed for a **3–7 minute, closed-book** recall check tomorrow. Mix at least two question purposes:          - **Name the invariant** (plus a tiny example).              - **Discriminate** (when A vs B—one criterion).              - **Mini-apply** (2–5 lines of code/proof/CLI).              - **Edge case + fix** (one sentence).                   Put brief **answers immediately below** in a collapsed block so I can quiz closed-book first.          **Format sketch (keep flexible, just keep the labels):**          `## Exit Quiz Q1: … Q2: … Q3: … <details><summary>Answers</summary> A1: … A2: … A3: … </details>`      6. **Next-Session Hook** _(1 line)_ The first concrete step **the learner** should take next time (file/function/problem to touch).       _(Optional, if we’re using hubs today)_ Add a single up-link at the very bottom: `Links: [[Hub – <Course>]]`.  ## Tone & length  - Voice: **Second-person (\"you\"), past tense**, from a tutor/observer's perspective. Natural and specific. Clever is fine if it sharpens memory.      - Keep it tight: roughly **400–800 words** total; each snippet **≤5 lines**; each quiz answer **≤1–2 lines** (or ≤5 lines code).       ---  ## Required Output (JSON)  Return **only** a single JSON array with **one object** containing:  - **`fileName`** — string, like `Session-Debrief.md` .      - **`fileContent`** — the full Markdown note as a single string including the sections above (`## Learning Shifts`, `## Snags → Fixes`, `## Exit Quiz`, `## Next-Session Hook`).       No extra keys. No prose outside the JSON. No code fences around the JSON.  **Example shape (illustrative only):**  `[ { \"fileName\": \"Session-Debrief.md\", \"fileContent\": \"# Session Debrief: <Primary Goal>\\n\\n**Opening**\\nYou tried X to achieve Y...\\n\\n## Key Takeaways\\n- The main outcome was...\\n\\n## Learning Shifts\\n### <Moment 1>\\n**Before (flawed):** You believed X...\\n**After (rule/invariant):** The rule is actually Y...\\n**Why it works:** ...\\n\\n## Snags → Fixes\\n- **<snag>** → <fix>.\\n\\n## Exit Quiz\\nQ1: ...\\nQ2: ...\\nQ3: ...\\n<details><summary>Answers</summary>\\n\\nA1: ...\\nA2: ...\\nA3: ...\\n\\n</details>\\n\\n## Next-Session Hook\\nNext, you should...\\n\\nLinks: [[Hub – <Course>]]\" } ]`",
+            "temperature": 0.4,
+            "output_path": "StudyNotes/Session",
+            "prompt": "={{ $json.full_transcript }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "output_path",
+              "displayName": "output_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4512,
+        1088
+      ],
+      "id": "a95122a4-adc2-4b5b-9075-bc1190a2f7da",
+      "name": "Call SESSION_NOTE"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "NAhZpiuAWRr5cKmK",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NAhZpiuAWRr5cKmK",
+          "cachedResultName": "note_agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "temperature": 0.3,
+            "prompt": "={{ $json.full_transcript }}",
+            "system_message": "# Persona: The Master Craftsman  ROLE: A writer who explains a technical process with the clarity and insight of an experienced mentor. TASK: To parse an enriched coaching transcript and synthesize a set of rich, step-by-step \"Playbooks\" that explain both the \"how\" (the specific build) and the \"why\" (the general principle) of each technical process encountered. GOAL: To create a library of high-quality, standalone tutorials. Each tutorial should document a specific solution from the session and then generalize that solution into an abstract pattern or principle that can be applied to future problems.  # Input  - The full, combined transcript from the `Coach` and `Integrator` sessions.       # Critical Rules & Heuristics  - **Identify All Playbooks:** Your primary task is to scan the entire transcript and identify **every distinct, self-contained technical procedure** that was discussed. Each distinct procedure will become its own separate Playbook note.      - **Synthesize, Don't Just Report:** For each playbook, you must synthesize the \"how\" (the code from the `Coach` session) with the \"why\" (the rationale from the `Integrator` interview).      - **From Concrete to Abstract:** Every playbook must follow a two-part structure: first, document the specific build from the session, then generalize that build into a broader principle or pattern.      - **Clarity is Paramount:** Each note must be a clear, concise, and professional tutorial.       # Process  1. **Identify All Procedures:** Read the entire transcript to identify every distinct, step-by-step technical procedure that was a focus of the session.      2. **For Each Procedure, Gather Components:**          - **The Build:** Reconstruct the specific step-by-step process with its corresponding code snippets and rationale, using the transcript as your source.              - **The Principle:** Analyze the specific build and identify the underlying abstract concept, design pattern, or programming principle it demonstrates.          3. **Synthesize All Playbook Notes:** For each procedure you identified, assemble a complete note, strictly adhering to the output contract below.       # Final Output Contract  Your final output must be a single, well-formed JSON array that can contain multiple note objects.  - **Format:** JSON Array      - **Schema:**          JSON          ```     [       {         \"fileName\": \"Playbook-Topic-One.md\",         \"fileContent\": \"# Playbook: [Specific Topic of Note 1]\\n\\n**Objective:** A brief, one-paragraph summary of the technical goal this specific playbook accomplishes.\\n\\n---\\n\\n## The Build: [Name of Specific Task from Session]\\n\\nThis section reconstructs the exact step-by-step solution from the session.\\n\\n### Step 1: [Descriptive Step Title]\\n\\n```python\\n# The relevant code snippet for this step.\\n```\\n\\n> **Rationale:** The reasoning for this specific step, drawn from the transcript.\\n\\n*<...Repeat for all steps in this procedure...>* \\n\\n---\\n\\n## The Principle: Generalizing the Pattern\\n\\n**Pattern:** A clear identification of the abstract programming principle or design pattern used (e.g., \\\"The Decorator Pattern,\\\" \\\"Memoization,\\\" \\\"Space-Time Tradeoff\\\").\\n\\n**Application:** A brief explanation of how this general pattern can be applied to solve other, different types of problems, including 1-2 hypothetical examples.\"       },       {         \"fileName\": \"Playbook-Topic-Two.md\",         \"fileContent\": \"# Playbook: [Specific Topic of Note 2]\\n\\n**Objective:** ...\\n\\n*<...Content for the second playbook note...>*\"       }     ]     ```      - **Instructions:**          - The top-level output **must** be a JSON array `[]`.              - Each object in the array represents a single, complete playbook note.              - Each `fileContent` value must be a single string containing the complete, formatted Markdown.",
+            "output_path": "StudyNotes/Tutorial"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "output_path",
+              "displayName": "output_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4512,
+        896
+      ],
+      "id": "1f2dc637-cff3-4745-ab12-6c0a9eac1435",
+      "name": "Call Tutorial"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "u3PANbUnAaMmwThX",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/u3PANbUnAaMmwThX",
+          "cachedResultName": "prompt_with_history_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "conversation_id": "={{ $json.conversation_id }}",
+            "agent_name": "dialectician"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1472,
+        1776
+      ],
+      "id": "5042730c-39c6-4e46-9435-a43a636b01ff",
+      "name": "Call 'prompt_with_history'"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1760,
+        1824
+      ],
+      "id": "a8ec905b-dc1f-4696-9a24-c1fad5971a8c",
+      "name": "DIALECTICIAN Merge"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "7lZWjDzpfhGqnvCi",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/7lZWjDzpfhGqnvCi",
+          "cachedResultName": "agent_executor_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "temperature": 0.7,
+            "agent_name": "dialectician",
+            "prompt": "={{ $json.prompt }}",
+            "conversation_id": "={{ $('cache_switch').item.json.conversation_id }}",
+            "system_message": "PERSONA:   ROLE: Expert teacher and dialogic partner.   TASK: Engage in collaborative discussion of lectures, readings, and talks; surface and probe key ideas, clarify arguments, and connect them to broader concepts.   GOAL: To analyze a source or topic, identify one or more concepts worth examining, facilitate a rigorous yet conversational exploration, and output a structured data manifest of the concepts explored.  RULESET:   ID: DIALOGIC_PHILOSOPHY   DESCRIPTION: The Science of Discussion   RULES:     - ID: RULE_1       NAME: Socratic Interlocutor       INSTRUCTION: Ask concise, purposeful questions that deepen understanding and reveal assumptions. Prioritize inquiry over instruction.     - ID: RULE_2       NAME: Concept-First       INSTRUCTION: Identify one or more central concepts or claims from the user’s material before advancing the discussion.     - ID: RULE_3       NAME: Evidence Anchoring       INSTRUCTION: When feasible, invite the user to ground claims in the text/lecture (page numbers, quotes, timestamps). Paraphrase instead of quoting at length.     - ID: RULE_4       NAME: Interpretive Charity       INSTRUCTION: Present the strongest reasonable interpretation of an author’s view before critiquing it.     - ID: RULE_5       NAME: Comparative Lenses       INSTRUCTION: When helpful, contrast the focal concept with adjacent theories, historical context, or counterarguments.     - ID: RULE_6       NAME: Non-Directive Stance       CONSTRAINT: Avoid step-by-step “coaching.” Do not supply solutions or problem answers; keep the tone collaborative and exploratory.     - ID: RULE_7       NAME: Cognitive Tools       INSTRUCTION: Use brief, evidence-based prompts (retrieval practice, metacognitive checks, bridging analogies) to promote learning—without taking over the reasoning.  WORKFLOW:   ID: MAIN_DIALOGUE_LOOP   ACTIONS:     - ACTION: INTAKE_AND_ANALYZE_MATERIAL       STEPS:         - PARSE_INPUT: Read the entire input and deconstruct it into components [Topic, Source_Type, Excerpts_or_Notes, User_Questions, Author_Claims, Context].         - EXTRACT_CONCEPTS: Identify core concepts/themes worth examining (e.g., causal inference, deontology vs. consequentialism, type systems vs. dynamic dispatch).         - PROPOSE_AGENDA: Present a brief, contextual summary of candidate focal concepts and a lightweight agenda; request confirmation to proceed.           EXAMPLE_PROMPT: \"I’m seeing ‘causal identification via IV’ and ‘exogeneity’ as the live concepts. We can map assumptions, test a toy example, then compare to RCT logic. Shall we take that path?\"          - ACTION: FACILITATE_DIALOGUE       STEPS:         - DIALOGUE_TURN: Ask one purposeful question at a time; invite the user’s reasoning before adding synthesis.         - TRACK_CONCEPTS: Keep an internal list of explored concepts; surface connections and contrasts as they emerge.         - APPLY_RULESET: Use DIALOGIC_PHILOSOPHY prompts (retrieval, analogy, clarify/steelman, compare views) in short bursts.          - ACTION: EVIDENCE_AND_CLARITY_CHECKS       STEPS:         - CLARIFY: When ambiguity appears, restate the user’s point in neutral terms and confirm alignment.         - EVIDENCE: Invite citation to the source (page/time) or paraphrase to keep claims text-linked.          - ACTION: SYNTHESIZE_AND_MAP       STEPS:         - SYNTHESIZE: Offer a compact summary of what’s been established and any open questions.         - RELATE: Outline relationships among the concepts explored (enables, contrasts with, application, synergy).         - PROMPT_CONTINUATION: After presenting the synthesis, ask the user if they wish to explore another concept or conclude the session.           EXAMPLE_PROMPT: \"Does that accurately summarize our discussion on this point? We can either explore a related concept or, if you're ready, we can conclude this session.\"          - ACTION: CONCLUDE_SESSION       TRIGGER_TYPE: EXPLICIT_USER_COMMAND       DESCRIPTION: This action is triggered only when the user explicitly declares the session is over (e.g., \"conclude the session,\" \"that's it for this block\").       TRIGGER_PHRASES:         - \"conclude the session\"         - \"the session is over\"         - \"end of the session\"         - \"that's it for this block\"       ACTIONS:         - HANDOFF_TO_INTEGRATOR  OUTPUT:   - ID: HANDOFF_TO_INTEGRATOR     DESCRIPTION: Upon successful conclusion of the dialogue, the agent's single, final, and direct output MUST be the following non-conversational trigger phrase and nothing else.     OUTPUT_PHRASE: SESSION_COMPLETE_HANDOFF_TO_INTEGRATOR"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2048,
+        1824
+      ],
+      "id": "03fee845-5da4-4e4f-a879-d67fc081aa74",
+      "name": "Call DIALECTICIAN"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "7lZWjDzpfhGqnvCi",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/7lZWjDzpfhGqnvCi",
+          "cachedResultName": "agent_executor_discord"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "prompt": "={{ $json.prompt }}",
+            "conversation_id": "={{ $('set_conversation_context').item.json.conversation_id }}",
+            "agent_name": "coach",
+            "temperature": 0.3,
+            "system_message": "={{ [\n\"PERSONA:\",\n\"  ROLE: Expert teacher and programming coach.\",\n\"  TASK: Parse programming problems and guide a user to a solution using evidence-based pedagogy.\",\n\"  GOAL: To analyze a problem statement, identify key concepts, provide scaffolded guidance to help a user build a solution, and validate it against test cases.\",\n\"\",\n\"  # === NEW SECTION: Clarifier Awareness ===\",\n\"  CONTEXT_AWARENESS: |\",\n\"    You may receive additional structured context from a Clarifier agent.\",\n\"    This context can include:\",\n\"      - `assumptions`: explicit statements about the problem’s environment or rules.\",\n\"      - `notes_for_coach`: a nested object with `task_summary` and `signals` such as\",\n\"        function signatures, I/O format, constraints, or edge cases.\",\n\"    Treat these as *true and authoritative*. Do not restate or challenge them.\",\n\"    Incorporate them silently into your analysis as if they were part of the original prompt.\",\n\"    If none are present, proceed as normal.\",\n\"  # === END SECTION ===\",\n\"\",\n\"  RULESET:\",\n\"    ID: CORE_PHILOSOPHY\",\n\"    DESCRIPTION: The Science of Teaching\",\n\"    RULES:\",\n\"      - ID: RULE_1\",\n\"        NAME: Expert Guide\",\n\"        INSTRUCTION: Act as a subject matter expert. Your goal is to guide the learner toward a correct and deep understanding.\",\n\"      - ID: RULE_2\",\n\"        NAME: Scaffold, Don't Spoil\",\n\"        INSTRUCTION: Provide the minimum level of support necessary for the learner to make progress on their own. Never give the final answer to a problem.\",\n\"      - ID: RULE_3\",\n\"        NAME: Evidence-Based Techniques\",\n\"        INSTRUCTION: When a learner is stuck, use methods like metacognitive prompts (\\\"What have you tried?\\\"), retrieval practice (\\\"Can you recall...?\\\"), or bridging analogies.\",\n\"      - ID: RULE_4\",\n\"        NAME: Hints on Demand\",\n\"        CONSTRAINT: Do not offer a hint or guidance unless the learner explicitly requests it via phrases like \\\"I'm stuck\\\" or \\\"I need a hint.\\\"\",\n\"\",\n\"  WORKFLOW:\",\n\"    ID: MAIN_COACHING_LOOP\",\n\"    ACTIONS:\",\n\"      - ACTION: INTAKE_AND_ANALYZE_PROBLEM\",\n\"        STEPS:\",\n\"          - PARSE_INPUT: Read the entire input (including any `assumptions` or `notes_for_coach` if provided) and deconstruct it into components [Goal, Rules, Test_Cases, Scaffolding_Code, Roadmap].\",\n\"          - EXTRACT_CONCEPTS: Identify the core computer science concepts required to solve the problem (e.g., *args, decorators).\",\n\"          - CONFIRM_PLAN: Present a brief, contextual summary of the analysis to the user and request confirmation to begin.\",\n\"            EXAMPLE_PROMPT: \\\"Okay, I see the goal is to complete the `log_call` decorator from the scaffolding. The key concept is function wrapping. Ready to start?\\\"\",\n\"      - ACTION: GUIDE_INQUIRY\",\n\"        STEPS:\",\n\"          - INITIALIZE_FROM_CONTEXT: Use the Roadmap, Scaffolding_Code, or any Clarifier assumptions as the starting point for the session.\",\n\"          - PROMPT_USER: At each step, prompt the user to solve the next part of the problem.\",\n\"          - APPLY_RULESET: Apply the CORE_PHILOSOPHY ruleset to provide hints and guidance when requested.\",\n\"\",\n\"  ACTION: VERIFY_SOLUTION\",\n\"  STEPS:\",\n\"    - VALIDATE: Prompt the user to execute their solution against the parsed Test_Cases.\",\n\"    - DEBUG: Assist the user in diagnosing and fixing discrepancies between their output and the expected output.\",\n\"    - HANDOFF_ON_SUCCESS: Upon successful validation of all test cases, your single, final, and direct output MUST be the following non-conversational trigger phrase and nothing else: SESSION_COMPLETE_HANDOFF_TO_INTEGRATOR\"\n].join('\\n') + \"\\n\\n\" + ( $('set_conversation_context').item.json.user_profile ?? '' ) }}\n"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2720,
+        1312
+      ],
+      "id": "a87471fe-9006-4988-bacb-9328b04b3607",
+      "name": "Call COACH"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "NAhZpiuAWRr5cKmK",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/NAhZpiuAWRr5cKmK",
+          "cachedResultName": "note_agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "temperature": 0.4,
+            "system_message": "# Persona: The Mnemonic Engineer  ROLE: A specialist in cognitive science and learning that transforms conversational transcripts into a set of precise, scientifically-optimized study materials. TASK: To analyze an enriched transcript, identify critical learning opportunities, and construct a variety of high-utility flashcards and practice concepts based on proven mnemonic principles. GOAL: To produce a rich, personalized set of study materials that attack key concepts from multiple angles, ensuring deep understanding and long-term retention.  # Input  - The full, combined transcript from the `Coach` and `Integrator` sessions.       # Mnemonic Principles (Core Logic)  You must adhere to the following principles when constructing study materials:  1. **Atomicity (One Fact Per Card):** Each flashcard must test a single, discrete piece of information. If an answer takes more than 10 seconds to recall, the concept is too complex and must be split into multiple, simpler cards.      2. **Multi-Angle Reinforcement:** For every major concept, struggle, or breakthrough identified, you must generate a **set of 2-4 distinct, atomic cards**. Each card must test the same core idea but from a different perspective. You must use a variety of formats:          - **Conceptual Q&A:** For high-level understanding (`Q: What is the core purpose of X?`).              - **Procedural Q&A:** For practical application (`Q: In Python, what is the syntax for X?`).              - **Cloze Deletions:** For definitions, syntax patterns, and lists. This is your preferred method for rote facts (`\"The` {{c1::await}}`keyword can only be used inside an`{{c2::async def}} `function.\"`).              - **Confusion Pairs:** If two concepts were mixed up in the session (e.g., `list.append` vs `list.extend`), create specific contrast cards (`Q: How does list.append(x) differ from list.extend(x) in terms of the argument they accept?`).              - **Error Encoding:** Create cards based on actual mistakes made in the session (`Q: What is a common pitfall when writing a Python decorator? A: Forgetting to use functools.wraps...`).          3. **Prioritize User Struggles:** The topics you select for card generation must be biased towards the concepts the user found most difficult, as explicitly identified in the `Integrator` interview.      4. **Include \"Why It Matters\":** Each recall card should include a concise, one-line note explaining the practical relevance of the information, cementing motivation and retrieval paths.      5. **Generate Actionable Practice Concepts:** The `[PRACTICE_CONCEPTS]` list must contain only practical, specific topics suitable for a problem generator (e.g., \"python-decorators,\" \"handling-kwargs\").       # Final Output Contract  Your final output must be a single, well-formed JSON array containing exactly one note object.  - **Format:** JSON Array      - **Schema:**          JSON          ```     [       {         \"fileName\": \"Flashcards.md\",         \"fileContent\": \"## [RECALL]\\n\\nQ: In Python, what is the core purpose of a decorator?\\nA: To dynamically add functionality to an existing function without modifying its source code.\\nWhy It Matters: This follows the Open/Closed Principle, allowing for extensible and clean code.\\n\\n---\\n\\nText: A decorator in Python is defined using the `{{c1::@}}` symbol before a function, and it takes the function below it as its `{{c2::argument}}`.\\nWhy It Matters: Memorizing the syntax pattern is the first step to implementation.\\n\\n---\\n\\nQ: What is a common pitfall when writing a decorator that causes the decorated function to lose its metadata (like its name and docstring)?\\nA: Forgetting to use the `@functools.wraps` decorator on the inner wrapper function.\\nWhy It Matters: This is a frequent and frustrating bug for beginners; encoding it as an error prevents future mistakes.\\n\\n---\\n\\n## [PRACTICE_CONCEPTS]\\n\\ndecorators\\nmemoization\\nargs-and-kwargs\\n\"       }     ]     ```      - **Instructions:**          - The top-level output **must** be a JSON array `[]` containing a single object.              - The `fileContent` must be a single string containing all the materials. Use `---` to separate individual `[RECALL]` cards.",
+            "prompt": "={{ $json.full_transcript }}",
+            "output_path": "StudyNotes/Flashcards"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "system_message",
+              "displayName": "system_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "output_path",
+              "displayName": "output_path",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "temperature",
+              "displayName": "temperature",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4512,
+        1472
+      ],
+      "id": "cad1da42-e137-45e2-8e38-32a7a67b8b92",
+      "name": "Call Flashcards"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "aad50308-be97-404d-9b3f-4fb029699b16",
+              "name": "rcMessage",
+              "value": "={{ $json.body.text }}",
+              "type": "string"
+            },
+            {
+              "id": "25ab0734-2f1c-4b15-8654-8b406efc3a31",
+              "name": "rcRoomId",
+              "value": "={{ $json.body.channel_id }}",
+              "type": "string"
+            },
+            {
+              "id": "e0cc98f4-3177-4a2b-9e41-0bf178bad0bb",
+              "name": "rcMessageId",
+              "value": "={{ $json.body.message_id }}",
+              "type": "string"
+            },
+            {
+              "id": "6dc7f468-0605-4747-8e6b-f21afa5e3c1a",
+              "name": "rcUserId",
+              "value": "={{ $json.body.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "61de7e73-0ce8-4708-928e-30f591ff30d1",
+              "name": "UserProfile",
+              "value": "User Profile Primary Goal To become a professional Software Engineer, with a focus on building robust systems and leveraging AI/LLMs.  Current Learning Context The user is actively building foundational knowledge across several core areas of computer science. Current coursework includes:  Harvard's CS50 (via edX): Broad introduction to computer science fundamentals.  Boot.dev: Practical, hands-on Python curriculum. The user has completed all courses up to and including \"Build an Agent with Python.\"  UC San Diego's Discrete Mathematics for Computer Science (via Coursera): Formal mathematical foundations.  Learning Preferences & Heuristics Pragmatic Approach: The user prefers to establish a correct, working solution first, and then iterate to refine it towards the most optimal or \"best practice\" solution. The learning process is \"get it working, then get it right.\"  Multi-Angle Learning: The user finds it highly effective to see the same concept explained or applied from multiple different angles to build a more robust mental model.  Systems Thinker: The user has a demonstrated interest and aptitude for understanding and building complex, interconnected systems (as evidenced by the creation of this n8n workflow). They are interested in how individual components fit into a larger architecture.  Emerging Interests: While the user's primary focus is on building a strong foundation, they have a stated interest in AI/LLMs. They are currently in an exploratory phase and are open to discovering new areas of interest through practical application.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        128,
+        1776
+      ],
+      "id": "525d5580-eaba-4c0c-b82e-914d66e41175",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "SESSION_COMPLETE_HANDOFF_TO_INTEGRATOR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "b0b06c49-0c41-44c9-832c-a2dfc6d9fee9"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "INTEGRATOR"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "179c1b83-17c4-4cd7-9362-7b07f1b503af",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "SESSION_COMPLETE_HANDOFF_TO_INTEGRATOR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Conversation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        2944,
+        1312
+      ],
+      "id": "f7f405d2-7456-4ff6-8125-466bb09fc524",
+      "name": "input_to_INTEGRATOR"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT STRING_AGG(INITCAP(role::text) || ': ' || content, E'\\n---\\n' ORDER BY sequence_no) AS prompt\nFROM public.messages\nWHERE conversation_id = $1\nAND role::text IN ('user', 'coach');",
+        "options": {
+          "queryReplacement": "={{ $('cache_switch').item.json.conversation_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3392,
+        1136
+      ],
+      "id": "69e51dd0-6587-430c-a429-bed9d5f7bd2e",
+      "name": "assemble_coach_integrator_prompt",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT STRING_AGG(INITCAP(role::text) || ': ' || content, E'\\n---\\n' ORDER BY sequence_no) AS prompt\nFROM public.messages\nWHERE conversation_id = $1\nAND role::text IN ('user', 'dialectician');",
+        "options": {
+          "queryReplacement": "={{ $('cache_switch').item.json.conversation_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3392,
+        1328
+      ],
+      "id": "cfa05406-be76-4256-ac7d-ad30f8bf40ca",
+      "name": "assemble_dialectician_integrator_prompt",
+      "credentials": {
+        "postgres": {
+          "id": "6ZrCfI114C4y9tbO",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('set_conversation_context').item.json.target }}",
+                    "rightValue": "coach",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "8c3fb6fa-2399-4e25-82d1-eafe38ea5ff2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Coach"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "08cc324d-6781-4a13-9aff-c685ebbffffd",
+                    "leftValue": "={{ $('set_conversation_context').item.json.target }}",
+                    "rightValue": "dialectician",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Dialectician"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        3168,
+        1232
+      ],
+      "id": "42fea557-f3f6-4880-81a0-e5b686f5194d",
+      "name": "integrator_intitial_prompt"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "1cc94154-7aa6-4026-9898-a96a1f868355",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        1776
+      ],
+      "id": "3c27e484-83e5-4026-a408-cccf9506a8a4",
+      "name": "Webhook",
+      "webhookId": "1cc94154-7aa6-4026-9898-a96a1f868355"
+    },
+    {
+      "parameters": {
+        "channel": "={{ $node[\"Edit Fields\"].json.rcRoomId }}",
+        "text": "={{ $json.output }}",
+        "options": {},
+        "attachments": []
+      },
+      "type": "n8n-nodes-base.rocketchat",
+      "typeVersion": 1,
+      "position": [
+        4288,
+        1536
+      ],
+      "id": "6a527af9-53c8-4bdc-a425-c21763736040",
+      "name": "Post a message",
+      "credentials": {
+        "rocketchatApi": {
+          "id": "b68BSMonDyCpB4Vn",
+          "name": "Rocket account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d57f283b-59ff-42d1-a655-73aa11b93257",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "G7utAnqeb56Ws4jAK",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        1776
+      ],
+      "id": "30d85062-4d7e-44bb-a0d2-3dafef3e1ce4",
+      "name": "If"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "content-length": "18329",
+            "accept-encoding": "gzip,deflate",
+            "host": "192.168.1.244:5678",
+            "connection": "keep-alive"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "token": ":r1gj:",
+            "bot": false,
+            "channel_id": "68fbe2677a529af755eb03de",
+            "channel_name": "oct242025bootdev",
+            "message_id": "LH7q5F25f7f2sfQa3",
+            "timestamp": "2025-10-24T20:57:53.961Z",
+            "user_id": "Wzqbym6nvJ9KogwBC",
+            "user_name": "calen",
+            "text": "This lesson is part of an ongoing project for an ai agent.  I will paste in today's assignment, AND I will include some of the code I already have from previous assignments if you need the other code from the other files let me know: \n\n# Agents\n\nSo we've got some function calling working, but it's not fair to call our program an \"agent\" yet for one simple reason:\n\n_It has no feedback loop._\n\nA key part of an \"Agent\", as defined by AI-influencer-hype-bros, is that it can continuously use its tools to iterate on its own results. So we're going to build two things:\n\n1. A loop that will call the LLM over and over\n2. A list of messages in the \"conversation\". It will look something like this:\n    - User: \"Please fix the bug in the calculator\"\n    - Model: \"I want to call get_files_info...\"\n    - Tool: \"Here's the result of get_files_info...\"\n    - Model: \"I want to call get_file_content...\"\n    - Tool: \"Here's the result of get_file_content...\"\n    - Model: \"I want to call run_python_file...\"\n    - Tool: \"Here's the result of run_python_file...\"\n    - Model: \"I want to call write_file...\"\n    - Tool: \"Here's the result of write_file...\"\n    - Model: \"I want to call run_python_file...\"\n    - Tool: \"Here's the result of run_python_file...\"\n    - Model: \"I fixed the bug and then ran the calculator to ensure it's working.\"\n\n**This is a pretty big step, take your time!**\n\n## Assignment\n\n1. In `generate_content`, handle the results of any possible tool use:\n    1. [ ] This might already be happening, but make sure that with each call to [`client.models.generate_content`](https://googleapis.github.io/python-genai/genai.html#genai.models.Models.generate_content), you're passing in the entire `messages` list so that the LLM always does the \"next step\" based on the current state.\n    2. [ ] After calling client's `generate_content` method, check the [`.candidates`](https://googleapis.github.io/python-genai/genai.html#genai.types.GenerateContentResponse.candidates) property of the response. It's a list of response variations (usually just one). It contains the equivalent of \"I want to call get_files_info...\", so we need to add it to our conversation. Iterate over each `candidate` and add its [`.content`](https://googleapis.github.io/python-genai/genai.html#genai.types.Candidate.content) to your `messages` list.\n    3. [ ] After each actual function call, use the [`types.Content`](https://googleapis.github.io/python-genai/genai.html#genai.types.Content) function to convert the `function_responses` into a message with a role of `user` and append it into your `messages`.\n2. [ ] Next, instead of calling `generate_content` only once, create a loop to call it repeatedly.\n    1. [ ] Limit the loop to 20 iterations at most (this will stop our agent from spinning its wheels forever).\n    2. [ ] Use a `try-except` block and handle any errors accordingly.\n    3. [ ] After each call of `generate_content`, check if it returned the `response.text` property. If so, it's done, so print this final response and break out of the loop.\n    4. [ ] Otherwise, iterate again (unless max iterations was reached, of course).\n3. [ ] Test your code (duh). I'd recommend starting with a simple prompt, like \"explain how the calculator renders the result to the console\". This is what I got:\n\n```\n(aiagent) wagslane@MacBook-Pro-2 aiagent % uv run main.py \"how does the calculator render results to the console?\"\n - Calling function: get_files_info\n - Calling function: get_file_content\nFinal response:\nAlright, I've examined the code in `main.py`. Here's how the calculator renders results to the console:\n\n- **`print(to_print)`:** The core of the output is done using the `print()` function.\n- **`format_json_output(expression, result)`:** Before printing, the `format_json_output` function (imported from `pkg.render`) is used to format the result and the original expression into a JSON-like string. This formatted string is then stored in the `to_print` variable.\n- **Error handling:** The code includes error handling with `try...except` blocks. If there's an error during the calculation (e.g., invalid expression), an error message is printed to the console using `print(f\"Error: {e}\")`.\n\nSo, the calculator evaluates the expression, formats the result (along with the original expression) into a JSON-like string, and then prints that string to the console. It also prints error messages to the console if any errors occur.\n```\n\nYou may or may not need to make adjustments to your system prompt to get the LLM to behave the way you want. You're a prompt engineer now, so act like one!\n\n**Run and submit** the CLI tests.\n\nmain.py:\n\nimport os\n\nimport sys\n\nfrom google.genai import types\n\nfrom config import system_prompt, model\n\nfrom functions.get_files_info import schema_get_files_info\n\nfrom functions.get_file_content import schema_get_file_content\n\nfrom functions.run_python_file import schema_run_python_file\n\nfrom functions.write_file import schema_write_file\n\nfrom functions.call_function import call_function\n\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\napi_key = os.environ.get(\"GEMINI_API_KEY\")\n\n  \n\nfrom google import genai\n\nclient = genai.Client(api_key=api_key)\n\n  \n\navailable_functions = types.Tool(\n\n    function_declarations=[\n\n        schema_get_files_info,\n\n        schema_get_file_content,\n\n        schema_run_python_file,\n\n        schema_write_file,\n\n    ]\n\n)\n\n  \n\ndef main():\n\n    if len(sys.argv) == 1:\n\n        print(\"Error! You forgot your prompt.\")\n\n        sys.exit(1)\n\n  \n\n    user_prompt = sys.argv[1]\n\n    verbose = False\n\n  \n\n    messages = [\n\n    types.Content(role=\"user\", parts=[types.Part(text=user_prompt)]),\n\n]\n\n    if len(sys.argv) == 3 and sys.argv[2] == \"--verbose\":\n\n        verbose = True\n\n  \n\n    response = client.models.generate_content(\n\n        model=model,\n\n        contents=messages,\n\n        config=types.GenerateContentConfig(\n\n            tools=[available_functions],\n\n            system_instruction=system_prompt),\n\n    )\n\n    if response.function_calls:\n\n        for function_call_part in response.function_calls:\n\n            called_func = call_function(function_call_part, verbose)\n\n  \n\n            if verbose:\n\n                print(f\"-> {called_func.parts[0].function_response.response}\")\n\n  \n\n            messages.append(response.candidates[0].content)\n\n            messages.append(called_func)\n\n        final_response = client.models.generate_content(\n\n            model=model,\n\n            contents=messages,\n\n            config=types.GenerateContentConfig(\n\n                tools=[available_functions],\n\n                system_instruction=system_prompt),\n\n        )\n\n        print(final_response.text)\n\n    else:\n\n        print(response.text)\n\n    if verbose == True:\n\n        print(f\"User prompt: {user_prompt}\")\n\n        print(f\"Prompt tokens: {response.usage_metadata.prompt_token_count}\")\n\n        print(f\"Response tokens: {response.usage_metadata.candidates_token_count}\")\n\n  \n\nif __name__ == \"__main__\":\n\n    main()\n\nwrite_file.py:\n\nimport os\n\nfrom google.genai import types\n\n  \n  \n\ndef write_file(working_directory, file_path, content):\n\n    full_path = os.path.join(working_directory, file_path)\n\n    abs_path = os.path.abspath(full_path)\n\n    abs_working_directory = os.path.abspath(working_directory)\n\n    file_path_directory = os.path.dirname(abs_path)\n\n  \n\n    if  not abs_path.startswith(abs_working_directory):\n\n        return f'Error: Cannot write to \"{file_path}\" as it is outside the permitted working directory'\n\n    try:\n\n  \n\n        if not os.path.exists(file_path_directory):\n\n            os.makedirs(file_path_directory)\n\n  \n\n        with open(abs_path, \"w\") as f:\n\n            f.write(content)\n\n  \n\n    except Exception as e:\n\n        return f'Error: {e}'\n\n  \n\n    return f'Successfully wrote to \"{file_path}\" ({len(content)} characters written)'\n\n  \n\nschema_write_file = types.FunctionDeclaration(\n\n    name=\"write_file\",\n\n    description=\"Write to the specified file, constrained to the working directory.\",\n\n    parameters=types.Schema(\n\n        type=types.Type.OBJECT,\n\n        properties={\n\n            \"file_path\": types.Schema(\n\n                type=types.Type.STRING,\n\n                description=\"The file path pointing to the file to be written to, relative to the working directory.\",\n\n            ),\n\n            \"content\": types.Schema(\n\n                type=types.Type.STRING,\n\n                description=\"The content to be appended to the exsisting file.\",\n\n            ),\n\n        },\n\n        required=['file_path', 'content'],\n\n    ),\n\n)\n\nrun_python_file.py:\n\nimport os\n\nimport sys\n\nimport subprocess\n\nfrom google.genai import types\n\n  \n\ndef run_python_file(working_directory, file_path, args=[]):\n\n    full_path = os.path.join(working_directory, file_path)\n\n    abs_path = os.path.abspath(full_path)\n\n    abs_working_directory = os.path.abspath(working_directory)\n\n  \n\n    if  not abs_path.startswith(abs_working_directory):\n\n        return f'Error: Cannot execute \"{file_path}\" as it is outside the permitted working directory'\n\n    if not os.path.exists(abs_path):\n\n        return f'Error: File \"{file_path}\" not found.'\n\n    if not abs_path.endswith('.py'):\n\n        return f'Error: \"{file_path}\" is not a Python file.'\n\n    try:\n\n  \n\n        command = [sys.executable, abs_path, *args]\n\n  \n\n        completed_process = subprocess.run(command, capture_output=True, cwd=abs_working_directory, timeout=30, text=True )\n\n  \n\n        if not completed_process.stdout and not completed_process.stderr:\n\n            return \"No output produced.\"\n\n        else:\n\n            output_parts = []\n\n            if completed_process.stdout:\n\n                output_parts.append(f'STDOUT: {completed_process.stdout}')\n\n            if completed_process.stderr:\n\n                output_parts.append(f'STDERR: {completed_process. stderr}')\n\n            if completed_process.returncode != 0:\n\n                output_parts.append(f'Process exited with code {completed_process.returncode}')\n\n        final_output = \"\\n\".join(output_parts)\n\n  \n\n        return final_output\n\n  \n\n    except Exception as e:\n\n        return f'Error: executing Python file: {e}'\n\nschema_run_python_file = types.FunctionDeclaration(\n\n    name=\"run_python_file\",\n\n    description=\"Execute the code in the specified file, constrained to the working directory.\",\n\n    parameters=types.Schema(\n\n        type=types.Type.OBJECT,\n\n        properties={\n\n            \"file_path\": types.Schema(\n\n                type=types.Type.STRING,\n\n                description=\"The file path pointing to the file containing the code to execute, relative to the working directory.\",\n\n            ),\n\n            \"args\": types.Schema(\n\n                type=types.Type.ARRAY,\n\n                description=\"An optional list of command-line arguments to pass to the python script.\",\n\n                items=types.Schema(\n\n                    type=types.Type.STRING\n\n                )\n\n            ),\n\n        },\n\n        required=['file_path'],\n\n    ),\n\n)\n\nget_files_info.py:\n\nimport os\n\nfrom google.genai import types\n\n  \n\ndef get_files_info(working_directory, directory=\".\"):\n\n    full_path = os.path.join(working_directory, directory)\n\n    abs_path = os.path.abspath(full_path)\n\n    abs_working_directory = os.path.abspath(working_directory)\n\n  \n\n    if  not abs_path.startswith(abs_working_directory):\n\n        return f'Error: Cannot list \"{directory}\" as it is outside the permitted working directory'\n\n    if not os.path.isdir(full_path):\n\n        return f'Error: \"{directory}\" is not a directory'\n\n    try:\n\n  \n\n        dir_contents_list = os.listdir(full_path)\n\n        dir_contents_info_list = []\n\n  \n\n        for item in dir_contents_list:\n\n            item_path = os.path.join(full_path, item)\n\n            if os.path.isfile(item_path):\n\n                dir_contents_info_list.append(f\"- {item}: file_size={os.path.getsize(item_path)} bytes, is_dir=False\")\n\n            else:\n\n                dir_contents_info_list.append(f\"- {item}: file_size={os.path.getsize(item_path)} bytes, is_dir=True\")\n\n  \n\n        dir_contents_info_str = \"\\n\".join(dir_contents_info_list)\n\n        return dir_contents_info_str\n\n  \n\n    except Exception as e:\n\n        return f\"Error: {e}\"\n\nschema_get_files_info = types.FunctionDeclaration(\n\n    name=\"get_files_info\",\n\n    description=\"Lists files in the specified directory along with their sizes, constrained to the working directory.\",\n\n    parameters=types.Schema(\n\n        type=types.Type.OBJECT,\n\n        properties={\n\n            \"directory\": types.Schema(\n\n                type=types.Type.STRING,\n\n                description=\"The directory to list files from, relative to the working directory. If not provided, lists files in the working directory itself.\",\n\n            ),\n\n        },\n\n    ),\n\n)\n\nget_file_content.py:\n\nimport os\n\nfrom config import character_limit\n\nfrom google.genai import types\n\n  \n\ndef get_file_content(working_directory, file_path):\n\n    full_path = os.path.join(working_directory, file_path)\n\n    abs_path = os.path.abspath(full_path)\n\n    abs_working_directory = os.path.abspath(working_directory)\n\n  \n\n    if  not abs_path.startswith(abs_working_directory):\n\n        return f'Error: Cannot read \"{file_path}\" as it is outside the permitted working directory'\n\n    if not os.path.isfile(full_path):\n\n        return f'Error: File not found or is not a regular file: \"{file_path}\"'\n\n    try:\n\n  \n\n        with open(full_path, \"r\") as f:\n\n            file_content_string = f.read(character_limit)\n\n            if f.read(1):\n\n                file_content_string += f'[...File \"{file_path}\" truncated at {character_limit} characters]'\n\n            return file_content_string\n\n    except Exception as e:\n\n        return f\"Error: {e}\"\n\nschema_get_file_content = types.FunctionDeclaration(\n\n    name=\"get_file_content\",\n\n    description=\"Read file contents in the specified file, constrained to the working directory.\",\n\n    parameters=types.Schema(\n\n        type=types.Type.OBJECT,\n\n        properties={\n\n            \"file_path\": types.Schema(\n\n                type=types.Type.STRING,\n\n                description=\"The file path pointing to the file to read, relative to the working directory.\",\n\n            ),\n\n        },\n\n        required=['file_path'],\n\n    ),\n\n)\n\ncall_function.py:\n\nfrom google.genai import types\n\nfrom .get_file_content import get_file_content\n\nfrom .get_files_info import get_files_info\n\nfrom .run_python_file import run_python_file\n\nfrom .write_file import write_file\n\n  \n\nfunc_dic = {\n\n    \"get_file_content\": get_file_content,\n\n    \"get_files_info\": get_files_info,\n\n    \"run_python_file\": run_python_file,\n\n    \"write_file\": write_file\n\n}\n\n  \n\ndef call_function(function_call_part, verbose=False):\n\n    function_name = function_call_part.name\n\n  \n\n    if verbose == True:\n\n        print(f\"Calling function: {function_name}({function_call_part.args})\")\n\n    else:\n\n        print(f\" - Calling function: {function_name}\")\n\n  \n\n    function_to_call = func_dic.get(function_name)\n\n  \n\n    if function_to_call == None:\n\n        return types.Content(\n\n            role=\"tool\",\n\n            parts=[\n\n                types.Part.from_function_response(\n\n                    name=function_name,\n\n                    response={\"error\": f\"Unknown function: {function_name}\"},\n\n                )\n\n            ],\n\n        )\n\n    arg_dic = function_call_part.args\n\n    arg_dic['working_directory'] = './calculator'\n\n    function_result = function_to_call(**arg_dic)\n\n  \n\n    return types.Content(\n\n        role=\"tool\",\n\n        parts=[\n\n            types.Part.from_function_response(\n\n                name=function_name,\n\n                response={\"result\": function_result},\n\n            )\n\n        ],\n\n    )\n\nconfig.py:\n\n# Maximum charaters to read from a file.\n\ncharacter_limit = 10000\n\n  \n\nsystem_prompt = \"\"\"\n\nYou are a helpful AI coding agent.\n\n  \n\nWhen a user asks a question or makes a request, make a function call plan. You can perform the following operations:\n\n  \n\n- List files and directories\n\n  \n\nAll paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.\n\n\"\"\"\n\n  \n\nmodel = 'gemini-2.0-flash-001'",
+            "siteUrl": "http://localhost:3000"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/1cc94154-7aa6-4026-9898-a96a1f868355",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Clarifier": {
+      "main": [
+        [
+          {
+            "node": "If_CLARIFIER_finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build_Clarifier_Input": {
+      "main": [
+        [
+          {
+            "node": "Clarifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clarifier_Grok-4-Fast": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clarifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1st_turn_switch": {
+      "main": [
+        [
+          {
+            "node": "DIALECTICIAN Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "update_target_agent_CLARIFIER",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Clarifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "db_upsert_conversation": {
+      "main": [
+        [
+          {
+            "node": "db_insert_message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "db_insert_message": {
+      "main": [
+        [
+          {
+            "node": "set_conversation_context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set_conversation_context": {
+      "main": [
+        [
+          {
+            "node": "cache_switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cache_switch": {
+      "main": [
+        [
+          {
+            "node": "Call 'prompt_with_history'COACH",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'prompt_with_history'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "1st_turn_switch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "db_read_full_CLARIFIER",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call 'prompt_with_history'INTEGRATOR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "db_read_full_CLARIFIER": {
+      "main": [
+        [
+          {
+            "node": "Build_Clarifier_Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'coach_pioneer_swf'": {
+      "main": [
+        [
+          {
+            "node": "COACH Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "COACH Merge": {
+      "main": [
+        [
+          {
+            "node": "Call COACH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INTEGRATOR Merge": {
+      "main": [
+        [
+          {
+            "node": "Call 'agent_executor'INTEGRATOR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'prompt_with_history'INTEGRATOR": {
+      "main": [
+        [
+          {
+            "node": "INTEGRATOR Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Call 'prompt_with_history'COACH": {
+      "main": [
+        [
+          {
+            "node": "COACH Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If_CLARIFIER_finished": {
+      "main": [
+        [
+          {
+            "node": "Call 'coach_pioneer_swf'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "memory_update_CLARIFIER",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INTEGRATOR_handoff": {
+      "main": [
+        [
+          {
+            "node": "db_read_full_transcript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "db_read_full_transcript": {
+      "main": [
+        [
+          {
+            "node": "Call SESSION_NOTE",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call ARCHIVIST",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call Tutorial",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call Flashcards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'agent_executor'INTEGRATOR": {
+      "main": [
+        [
+          {
+            "node": "INTEGRATOR_handoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call SESSION_NOTE": {
+      "main": [
+        []
+      ]
+    },
+    "Call 'prompt_with_history'": {
+      "main": [
+        [
+          {
+            "node": "DIALECTICIAN Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DIALECTICIAN Merge": {
+      "main": [
+        [
+          {
+            "node": "Call DIALECTICIAN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call DIALECTICIAN": {
+      "main": [
+        [
+          {
+            "node": "input_to_INTEGRATOR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call COACH": {
+      "main": [
+        [
+          {
+            "node": "input_to_INTEGRATOR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "db_upsert_conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "input_to_INTEGRATOR": {
+      "main": [
+        [
+          {
+            "node": "integrator_intitial_prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "assemble_coach_integrator_prompt": {
+      "main": [
+        [
+          {
+            "node": "INTEGRATOR Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "integrator_intitial_prompt": {
+      "main": [
+        [
+          {
+            "node": "assemble_coach_integrator_prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "assemble_dialectician_integrator_prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "assemble_dialectician_integrator_prompt": {
+      "main": [
+        [
+          {
+            "node": "INTEGRATOR Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "360a066b-da04-46dd-95e9-244445aadd8c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1571a693589ca6ea2fc417eb95f2eb62c01ff69b0a5ed19cdc67bf6c6172da3b"
+  },
+  "id": "o4uNa3uphOdsQZKD",
+  "tags": []
+}
