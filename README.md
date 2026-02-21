@@ -16,6 +16,14 @@ Both modes feed into a shared enrichment stage and an integrated artifact genera
 A major focus of this project was **instruction-set engineering**: designing role-specific prompts to reliably produce the intended learning behavior and structured outputs across stages.
 
 ---
+Repository Scope
+
+This repository documents the architecture, workflow structure, and instruction-set design of the system.
+
+It is not packaged as a turnkey deployment. Environment-specific configuration (e.g., credentials, runtime setup, Rocket.Chat integration details) has been intentionally excluded.
+
+The focus of this repository is architectural clarity and system design rather than production deployment.
+---
 
 ## Core Design Principles
 
